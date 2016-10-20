@@ -9,15 +9,6 @@
 #include <boost/log/expressions.hpp>
 #include <csi_hcl_asio/http_client.h>
 
-/*
-void handle_get(csi::http_client::call_context* state) {
-  if(state->http_result() >= 200 && state->http_result() < 300)
-    BOOST_LOG_TRIVIAL(info) << "handle_get data: " << state->uri() << " got " << state->rx_content_length() << " bytes, time=" << state->milliseconds() << " ms";
-  else
-    BOOST_LOG_TRIVIAL(error) << "handle_get data: " << state->uri() << " HTTPRES = " << state->http_result();
-}
-*/
-
 void log_result(csi::http_client::call_context::handle h) {
   if (h->ok()) {
     size_t sz = h->rx_content_length();
@@ -33,37 +24,30 @@ void log_result(csi::http_client::call_context::handle h) {
   }
 }
 
-#define NR_OF_URI 9
+#define NR_OF_URI 2
 std::string uris[NR_OF_URI] =
 {
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/index.m3u8",
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/1000/prog_index.m3u8",
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/1000/segm035890.ts",
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/1000/segm035811.ts",
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/1000/segm035812.ts",
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/1000/segm035813.ts",
-  "http://188.138.9.246/S2/HLS_LIVE/cnn_turk/1000/segm035814.ts",
   "http://google.com",
   "http://dn.se"
 };
 
-
-std::string uri3 = "google.com";
-
 int main(int argc, char **argv) {
   boost::asio::io_service io_service;
+  auto keepalive_work = std::make_unique<boost::asio::io_service::work>(io_service);
   boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::info);
   curl_global_init(CURL_GLOBAL_NOTHING); /* minimal */
   csi::http_client handler(io_service);
   /* enter io_service run loop */
-  boost::thread th(boost::bind(&boost::asio::io_service::run, &io_service));
+  std::thread asio_thread([&] { io_service.run(); });
 
   for (int i = 0; i != NR_OF_URI; ++i) {
     log_result(handler.perform(csi::create_http_request(csi::http::GET, uris[i], {}, std::chrono::milliseconds(10000)), false));
   }
 
+  while (!handler.done())
+    boost::this_thread::sleep(boost::posix_time::milliseconds(1000));
   handler.close();
-  th.join();
-
+  keepalive_work.reset();
+  asio_thread.join();
   return 0;
 }

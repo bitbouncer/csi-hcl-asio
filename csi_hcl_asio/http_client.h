@@ -549,7 +549,7 @@ class http_client
 
         std::string content_length_str = context->get_rx_header("Content-Length");
         if (content_length_str.size()) {
-          if (context->rx_content_length() != atoi(content_length_str.c_str())) {
+          if (context->rx_content_length() < atoi(content_length_str.c_str())) {
             context->_transport_ok = false;
           }
         }
