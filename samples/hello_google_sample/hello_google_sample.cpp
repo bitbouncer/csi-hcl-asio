@@ -9,7 +9,7 @@
 #include <boost/log/expressions.hpp>
 #include <csi_hcl_asio/http_client.h>
 
-void log_result(csi::http_client::call_context::handle h) {
+void log_result(std::shared_ptr<csi::http::request> h) {
   if (h->ok()) {
     size_t sz = h->rx_content_length();
     size_t kb_per_sec = 0;
@@ -36,12 +36,12 @@ int main(int argc, char **argv) {
   auto keepalive_work = std::make_unique<boost::asio::io_service::work>(io_service);
   boost::log::core::get()->set_filter(boost::log::trivial::severity >= boost::log::trivial::info);
   curl_global_init(CURL_GLOBAL_NOTHING); /* minimal */
-  csi::http_client handler(io_service);
+  csi::http::client handler(io_service);
   /* enter io_service run loop */
   std::thread asio_thread([&] { io_service.run(); });
 
   for (int i = 0; i != NR_OF_URI; ++i) {
-    log_result(handler.perform(csi::create_http_request(csi::http::GET, uris[i], {}, std::chrono::milliseconds(10000)), false));
+    log_result(handler.perform(csi::http::create_http_request(csi::http::GET, uris[i], {}, std::chrono::milliseconds(10000)), false));
   }
 
   while (!handler.done())

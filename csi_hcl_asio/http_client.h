@@ -21,147 +21,57 @@
 #include <boost/thread/condition_variable.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string.hpp>
+#include "http_request.h"
 #include "http_defs.h"
 #pragma once
 
 namespace csi {
-class http_client
+namespace http {
+class client
 {
   private:
-  
+
   // copy of csi-async to get rid of dependency
   class spinlock
-{
-  public:
-  using scoped_lock = std::unique_lock<spinlock>;
+  {
+    public:
+    using scoped_lock = std::unique_lock<spinlock>;
 
-  inline spinlock() {
-    _lock.clear();
-  }
+    inline spinlock() {
+      _lock.clear();
+    }
 
-  inline void lock() {
-    while (true) {
-      for (int32_t i = 0; i < 10000; ++i) {
-        if (!_lock.test_and_set(std::memory_order_acquire)) {
-          return;
+    inline void lock() {
+      while (true) {
+        for (int32_t i = 0; i < 10000; ++i) {
+          if (!_lock.test_and_set(std::memory_order_acquire)) {
+            return;
+          }
         }
+        std::this_thread::yield();
       }
-      std::this_thread::yield();
     }
-  }
 
-  inline bool try_lock() {
-    return !_lock.test_and_set(std::memory_order_acquire);
-  }
+    inline bool try_lock() {
+      return !_lock.test_and_set(std::memory_order_acquire);
+    }
 
-  inline void unlock() {
-    _lock.clear(std::memory_order_release);
-  }
+    inline void unlock() {
+      _lock.clear(std::memory_order_release);
+    }
 
-  private:
-  std::atomic_flag _lock;
-  spinlock(spinlock const&) = delete;
-  spinlock & operator=(spinlock const&) = delete;
-};
+    private:
+    std::atomic_flag _lock;
+    spinlock(spinlock const&) = delete;
+    spinlock & operator=(spinlock const&) = delete;
+  };
 
   public:
-  
-    
-  // dummy implementetation
-  class buffer
-  {
-    public:
-    buffer() { _data.reserve(32 * 1024); }
-    void reserve(size_t sz) { _data.reserve(sz); }
-    void append(const uint8_t* p, size_t sz) { _data.insert(_data.end(), p, p + sz); }
-    void append(uint8_t s) { _data.push_back(s); }
-    const uint8_t* data() const { return &_data[0]; }
-    size_t size() const { return _data.size(); }
-    void pop_back() { _data.resize(_data.size() - 1); }
 
-    private:
-    std::vector<uint8_t> _data;
-  };
 
-  class call_context
-  {
-    friend http_client;
-    public:
-    typedef boost::function <void(std::shared_ptr<call_context>)> callback;
-    typedef std::shared_ptr<call_context>                         handle;
 
-    call_context(csi::http::method_t method, const std::string& uri, const std::vector<std::string>& headers, const std::chrono::milliseconds& timeout, bool verbose = false) :
-      _method(method),
-      _uri(uri),
-      _curl_verbose(verbose),
-      _timeoutX(timeout),
-      _http_result(csi::http::undefined),
-      _tx_headers(headers),
-      _curl_easy(NULL),
-      _curl_headerlist(NULL),
-      _curl_done(false) {
-      _curl_easy = curl_easy_init();
-    }
 
-    ~call_context() {
-      if (_curl_easy)
-        curl_easy_cleanup(_curl_easy);
-      if (_curl_headerlist)
-        curl_slist_free_all(_curl_headerlist);
-    }
-
-    public:
-    inline void curl_start(call_context::handle h) { _curl_shared = h; }
-    inline void curl_stop() { _curl_shared.reset(); }
-    inline call_context::handle curl_handle() { return _curl_shared; }
-    inline int64_t milliseconds() const { std::chrono::milliseconds duration = std::chrono::duration_cast<std::chrono::milliseconds>(_end_ts - _start_ts); return duration.count(); }
-    inline int64_t microseconds() const { std::chrono::microseconds duration = std::chrono::duration_cast<std::chrono::microseconds>(_end_ts - _start_ts); return duration.count(); }
-    std::string tx_content() const { return _tx_stream.str(); }
-    const char* rx_content() const { return _rx_buffer.size() ? (const char*) _rx_buffer.data() : ""; }
-    inline size_t tx_content_length() const { return _tx_stream.str().size(); }
-    inline size_t rx_content_length() const { return _rx_buffer.size(); }
-    inline int    rx_kb_per_sec() const { auto sz = rx_content_length(); int64_t ms = milliseconds();  return (int) (ms == 0 ? 0 : sz / ms); }
-    inline void set_verbose(bool state) { _curl_verbose = state; }
-    inline const std::string& uri() const { return _uri; }
-    inline csi::http::status_type http_result() const { return _http_result; }
-    inline bool transport_result() const { return _transport_ok; }
-    inline bool ok() const { return _transport_ok && (_http_result >= 200) && (_http_result < 300); }
-
-    std::string get_rx_header(const std::string& header) const {
-      for (std::vector<csi::http::header_t>::const_iterator i = _rx_headers.begin(); i != _rx_headers.end(); ++i) {
-        if (boost::iequals(header, i->name))
-          return i->value;
-      }
-      return "";
-    }
-
-    private:
-    csi::http::method_t                   _method;
-    std::string                           _uri;
-    std::vector<std::string>              _tx_headers;
-    std::vector<csi::http::header_t>      _rx_headers;
-    std::chrono::steady_clock::time_point _start_ts;
-    std::chrono::steady_clock::time_point _end_ts;
-    std::chrono::milliseconds             _timeoutX;
-    callback                              _callback;
-
-    //TX
-    std::stringstream                     _tx_stream; // temporary for test...
-    //RX
-    buffer                                _rx_buffer;
-
-    csi::http::status_type                _http_result;
-    bool                                  _transport_ok;
-
-    //curl stuff
-    CURL*                                 _curl_easy;
-    curl_slist*                           _curl_headerlist;
-    bool                                  _curl_done;
-    handle                                _curl_shared; // used to keep object alive when only curl knows about the context
-    bool                                  _curl_verbose;
-  };
-
-  http_client(boost::asio::io_service& io_service) :
+  client(boost::asio::io_service& io_service) :
     _io_service(io_service),
     _timer(_io_service),
     _closing(false) {
@@ -172,7 +82,7 @@ class http_client
     curl_multi_setopt(_multi, CURLMOPT_TIMERDATA, this);
   }
 
-  ~http_client() {
+  ~client() {
     close();
   }
 
@@ -189,23 +99,23 @@ class http_client
       });
     }
   }
-  
+
   inline bool done() {
     return (_curl_handles_still_running == 0);
   }
 
-  void http_client::perform_async(call_context::handle request, call_context::callback cb) {
+  void perform_async(std::shared_ptr<csi::http::request> request, csi::http::request::callback cb) {
     request->_callback = cb;
     _io_service.post([this, request]() {
       _perform(request);
     });
   }
 
-  csi::http_client::call_context::handle http_client::perform(call_context::handle request, bool verbose) {
+  std::shared_ptr<csi::http::request> perform(std::shared_ptr<csi::http::request> request, bool verbose) {
     request->_curl_verbose = verbose;
-    std::promise<csi::http_client::call_context::handle> p;
-    std::future<csi::http_client::call_context::handle>  f = p.get_future();
-    perform_async(request, [&p](http_client::call_context::handle result) {
+    std::promise<std::shared_ptr<csi::http::request>> p;
+    std::future<std::shared_ptr<csi::http::request>>  f = p.get_future();
+    perform_async(request, [&p](std::shared_ptr<csi::http::request> result) {
       p.set_value(result);
     });
     f.wait();
@@ -213,13 +123,13 @@ class http_client
   }
 
   protected:
-  void _perform(call_context::handle request) {
+  void _perform(std::shared_ptr<csi::http::request> request) {
     request->curl_start(request); // increments usage count and keeps object around until curl thinks its done.
 
-    curl_easy_setopt(request->_curl_easy, CURLOPT_OPENSOCKETFUNCTION, &http_client::_opensocket_cb);
+    curl_easy_setopt(request->_curl_easy, CURLOPT_OPENSOCKETFUNCTION, &client::_opensocket_cb);
     curl_easy_setopt(request->_curl_easy, CURLOPT_OPENSOCKETDATA, this);
 
-    curl_easy_setopt(request->_curl_easy, CURLOPT_CLOSESOCKETFUNCTION, &http_client::_closesocket_cb);
+    curl_easy_setopt(request->_curl_easy, CURLOPT_CLOSESOCKETFUNCTION, &client::_closesocket_cb);
     curl_easy_setopt(request->_curl_easy, CURLOPT_CLOSESOCKETDATA, this);
 
     //SSL OPTIONS
@@ -269,7 +179,7 @@ class http_client
     curl_easy_setopt(request->_curl_easy, CURLOPT_WRITEDATA, &request->_rx_buffer);
 
 
-    curl_easy_setopt(request->_curl_easy, CURLOPT_PRIVATE, request.get());
+
     curl_easy_setopt(request->_curl_easy, CURLOPT_LOW_SPEED_TIME, 3L);
     curl_easy_setopt(request->_curl_easy, CURLOPT_LOW_SPEED_LIMIT, 10L);
 
@@ -304,14 +214,14 @@ class http_client
   }
 
   // must not be called within curl callbacks - post a asio message instead
-  void _poll_remove(call_context::handle h) {
-    BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << ", handle: " << h->_curl_easy;
-    curl_multi_remove_handle(_multi, h->_curl_easy);
+  void _poll_remove(std::shared_ptr<request> p) {
+    BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << ", handle: " << p->_curl_easy;
+    curl_multi_remove_handle(_multi, p->_curl_easy);
   }
 
   // CURL CALLBACKS
   static curl_socket_t _opensocket_cb(void *clientp, curlsocktype purpose, struct curl_sockaddr *address) {
-    return ((http_client*) clientp)->opensocket_cb(purpose, address);
+    return ((client*) clientp)->opensocket_cb(purpose, address);
   }
 
   curl_socket_t opensocket_cb(curlsocktype purpose, struct curl_sockaddr *address) {
@@ -340,29 +250,27 @@ class http_client
       return sockfd;
     }
     // IPV6
-    if (purpose == CURLSOCKTYPE_IPCXN && address->family == AF_INET6)
-    {
+    if (purpose == CURLSOCKTYPE_IPCXN && address->family == AF_INET6) {
         /* create a tcp socket object */
-        boost::asio::ip::tcp::socket *tcp_socket = new boost::asio::ip::tcp::socket(_io_service);
+      boost::asio::ip::tcp::socket *tcp_socket = new boost::asio::ip::tcp::socket(_io_service);
 
-        /* open it and get the native handle*/
-        boost::system::error_code ec;
-        tcp_socket->open(boost::asio::ip::tcp::v6(), ec);
-        if (ec)
-        {
-            BOOST_LOG_TRIVIAL(error) << this << ", " << BOOST_CURRENT_FUNCTION << ", open failed, socket: " << ec << ", (" << ec.message() << ")";
-            delete tcp_socket;
-            return CURL_SOCKET_BAD;
-        }
+      /* open it and get the native handle*/
+      boost::system::error_code ec;
+      tcp_socket->open(boost::asio::ip::tcp::v6(), ec);
+      if (ec) {
+        BOOST_LOG_TRIVIAL(error) << this << ", " << BOOST_CURRENT_FUNCTION << ", open failed, socket: " << ec << ", (" << ec.message() << ")";
+        delete tcp_socket;
+        return CURL_SOCKET_BAD;
+      }
 
-        curl_socket_t sockfd = tcp_socket->native_handle();
-        /* save it for monitoring */
-        {
-            spinlock::scoped_lock xxx(_spinlock);
-            _socket_map.insert(std::pair<curl_socket_t, boost::asio::ip::tcp::socket *>(sockfd, tcp_socket));
-        }
-        BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << " open ok, socket: " << sockfd;
-        return sockfd;
+      curl_socket_t sockfd = tcp_socket->native_handle();
+      /* save it for monitoring */
+      {
+        spinlock::scoped_lock xxx(_spinlock);
+        _socket_map.insert(std::pair<curl_socket_t, boost::asio::ip::tcp::socket *>(sockfd, tcp_socket));
+      }
+      BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << " open ok, socket: " << sockfd;
+      return sockfd;
     }
 
     BOOST_LOG_TRIVIAL(error) << "http_client::opensocket_cb unsupported address family";
@@ -370,27 +278,22 @@ class http_client
   }
 
   static int _sock_cb(CURL *e, curl_socket_t s, int what, void *user_data, void* per_socket_user_data) {
-    return ((http_client*) user_data)->sock_cb(e, s, what, per_socket_user_data);
+    return ((client*) user_data)->sock_cb(e, s, what, per_socket_user_data);
   }
 
   int sock_cb(CURL *e, curl_socket_t s, int what, void* per_socket_user_data) {
     if (what == CURL_POLL_REMOVE) {
-      call_context* context = NULL;
-      curl_easy_getinfo(e, CURLINFO_PRIVATE, &context);
-      assert(context);
-      if (!context) {
-        BOOST_LOG_TRIVIAL(warning) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURL_POLL_REMOVE, socket: " << s << " - no context, skipping";
-        return 0;
-      }
-      // do nothing and hope we get a socket close callback???? kolla om det är rätt...
-      // we cannot close or destroy the boost socket since this in inside callback - it is still used...
+      //std::shared_ptr<call_context> context = call_context::lookup(e);
+      //if (!context) {
+      //  BOOST_LOG_TRIVIAL(warning) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURL_POLL_REMOVE, socket: " << s << " - no context, skipping";
+      //  return 0;
+      //}
+      //// do nothing and hope we get a socket close callback???? kolla om det är rätt...
+      //// we cannot close or destroy the boost socket since this in inside callback - it is still used...
       return 0;
     }
 
     boost::asio::ip::tcp::socket* tcp_socket = (boost::asio::ip::tcp::socket*) per_socket_user_data;
-    call_context* context = NULL;
-    curl_easy_getinfo(e, CURLINFO_PRIVATE, &context);
-    assert(context);
     if (!tcp_socket) {
       //we try to find the data in our own mapping
       //if we find it - register this to curl so we dont have to do this every time.
@@ -409,26 +312,28 @@ class http_client
       }
     }
 
+    std::shared_ptr<request> context = request::lookup(e);
+
     switch (what) {
       case CURL_POLL_IN:
         BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURL_POLL_IN, socket: " << s;
         tcp_socket->async_read_some(boost::asio::null_buffers(), [this, tcp_socket, context](const boost::system::error_code& ec, std::size_t bytes_transferred) {
-          socket_rx_cb(ec, tcp_socket, context->curl_handle());
+          socket_rx_cb(ec, tcp_socket, context);
         });
         break;
       case CURL_POLL_OUT:
         BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURL_POLL_OUT, socket: " << s;
         tcp_socket->async_write_some(boost::asio::null_buffers(), [this, tcp_socket, context](const boost::system::error_code& ec, std::size_t bytes_transferred) {
-          socket_tx_cb(ec, tcp_socket, context->curl_handle());
+          socket_tx_cb(ec, tcp_socket, context);
         });
         break;
       case CURL_POLL_INOUT:
         BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURL_POLL_INOUT, socket: " << s;
         tcp_socket->async_read_some(boost::asio::null_buffers(), [this, tcp_socket, context](const boost::system::error_code& ec, std::size_t bytes_transferred) {
-          socket_rx_cb(ec, tcp_socket, context->curl_handle());
+          socket_rx_cb(ec, tcp_socket, context);
         });
         tcp_socket->async_write_some(boost::asio::null_buffers(), [this, tcp_socket, context](const boost::system::error_code& ec, std::size_t bytes_transferred) {
-          socket_tx_cb(ec, tcp_socket, context->curl_handle());
+          socket_tx_cb(ec, tcp_socket, context);
         });
         break;
       case CURL_POLL_REMOVE:
@@ -439,7 +344,7 @@ class http_client
   }
 
   //BOOST EVENTS
-  void socket_rx_cb(const boost::system::error_code& ec, boost::asio::ip::tcp::socket * tcp_socket, call_context::handle context) {
+  void socket_rx_cb(const boost::system::error_code& ec, boost::asio::ip::tcp::socket * tcp_socket, std::shared_ptr<request> context) {
     if (!ec && !context->_curl_done) {
       CURLMcode rc = curl_multi_socket_action(_multi, tcp_socket->native_handle(), CURL_CSELECT_IN, &_curl_handles_still_running);
       if (!context->_curl_done)
@@ -450,7 +355,7 @@ class http_client
     }
   }
 
-  void socket_tx_cb(const boost::system::error_code& ec, boost::asio::ip::tcp::socket * tcp_socket, call_context::handle context) {
+  void socket_tx_cb(const boost::system::error_code& ec, boost::asio::ip::tcp::socket * tcp_socket, std::shared_ptr<request> context) {
     if (!ec) {
       CURLMcode rc = curl_multi_socket_action(_multi, tcp_socket->native_handle(), CURL_CSELECT_OUT, &_curl_handles_still_running);
       check_completed();
@@ -471,7 +376,7 @@ class http_client
 
   //curl callbacks
   static int _multi_timer_cb(CURLM *multi, long timeout_ms, void *userp) {
-    return ((http_client*) userp)->multi_timer_cb(multi, timeout_ms);
+    return ((client*) userp)->multi_timer_cb(multi, timeout_ms);
   }
 
   int multi_timer_cb(CURLM* multi, long timeout_ms) {
@@ -495,9 +400,9 @@ class http_client
   }
 
   //static size_t         _write_cb(void *ptr, size_t size, size_t nmemb, void *data);
-  
+
   static int _closesocket_cb(void* user_data, curl_socket_t item) {
-    return ((http_client*) user_data)->closesocket_cb(item);
+    return ((client*) user_data)->closesocket_cb(item);
   }
 
   int closesocket_cb(curl_socket_t item) {
@@ -532,9 +437,9 @@ class http_client
       m = curl_multi_info_read(_multi, &msgq);
       if (m && (m->msg == CURLMSG_DONE)) {
         CURL *e = m->easy_handle;
-        call_context* context = NULL;
-        curl_easy_getinfo(e, CURLINFO_PRIVATE, &context);
-        assert(context);
+
+
+        std::shared_ptr<request> context = request::lookup(e);
 
         long http_result = 0;
         CURLcode curl_res = curl_easy_getinfo(e, CURLINFO_RESPONSE_CODE, &http_result);
@@ -556,7 +461,6 @@ class http_client
 
 
         BOOST_LOG_TRIVIAL(trace) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURLMSG_DONE, http : " << to_string(context->_method) << " " << context->uri() << " res = " << http_result << " " << context->milliseconds() << " ms";
-        call_context::handle h(context->curl_handle());
 
         if (context->_callback) {
           // lets make sure the character in the buffer after the content is NULL
@@ -565,15 +469,11 @@ class http_client
           context->_rx_buffer.append(0);
           context->_rx_buffer.pop_back(); // don't change the size..
 
-          context->_callback(h);
+          context->_callback(context);
         }
 
-        context->curl_stop();
-        curl_easy_setopt(context->_curl_easy, CURLOPT_PRIVATE, NULL);
-        curl_multi_remove_handle(_multi, h->_curl_easy);
-        //_io_service.post(boost::bind(&http_client::_poll_remove, this, h)); // ???? direct call should be possible
-        //curl_multi_remove_handle(_multi, e);
-        //curl_easy_cleanup(e);
+        curl_multi_remove_handle(_multi, context->_curl_easy);
+        context->curl_stop(); // must be the last one...
       }
     } while (m);
   }
@@ -586,7 +486,7 @@ class http_client
     return sz;
   }
 
-  static size_t write_callback_buffer(void *ptr, size_t size, size_t nmemb, csi::http_client::buffer* buf) {
+  static size_t write_callback_buffer(void *ptr, size_t size, size_t nmemb, csi::http::buffer* buf) {
     size_t sz = size*nmemb;
     BOOST_LOG_TRIVIAL(trace) << BOOST_CURRENT_FUNCTION << ", in size: " << sz;
     buf->append((const uint8_t*) ptr, sz);
@@ -627,8 +527,5 @@ class http_client
   int                                                     _curl_handles_still_running;
   bool                                                    _closing;
 };
-
-inline std::shared_ptr<http_client::call_context> create_http_request(csi::http::method_t method, const std::string& uri, const std::vector<std::string>& headers, const std::chrono::milliseconds& timeout, bool verbose = false) {
-  return std::make_shared<http_client::call_context>(method, uri, headers, timeout, verbose);
-}
+}; // namespace
 }; // namespace 
