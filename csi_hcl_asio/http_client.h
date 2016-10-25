@@ -21,6 +21,7 @@
 #include <boost/thread/condition_variable.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/log/trivial.hpp>
 #include "http_request.h"
 #include "http_defs.h"
 #pragma once

@@ -16,6 +16,7 @@ class buffer
   const uint8_t* data() const { return &_data[0]; }
   size_t size() const { return _data.size(); }
   void pop_back() { _data.resize(_data.size() - 1); }
+  void clear() { _data.clear(); }
 
   private:
   std::vector<uint8_t> _data;
@@ -28,6 +29,7 @@ class request
   typedef boost::function <void(std::shared_ptr<request>)> callback;
 
   request(csi::http::method_t method, const std::string& uri, const std::vector<std::string>& headers, const std::chrono::milliseconds& timeout, bool verbose = false) :
+    _transport_ok(true),
     _method(method),
     _uri(uri),
     _curl_verbose(verbose),
@@ -50,6 +52,19 @@ class request
 
   public:
   inline void curl_start(std::shared_ptr<request> self) {
+    // lets clear state if this is a restarted transfer...
+    // TBD how do we handle post and put? what about ingested data??
+    if (_curl_headerlist)
+      curl_slist_free_all(_curl_headerlist);
+    _curl_headerlist = NULL;
+
+    _curl_done = false;
+    _transport_ok = true;
+    _http_result = csi::http::undefined;
+
+    _rx_headers.clear();
+    _rx_buffer.clear();
+
     _this = self;
     curl_easy_setopt(_curl_easy, CURLOPT_PRIVATE, this);
   }
