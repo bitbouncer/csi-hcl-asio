@@ -68,10 +68,6 @@ class client
   };
 
   public:
-
-
-
-
   client(boost::asio::io_service& io_service) :
     _io_service(io_service),
     _timer(_io_service),
