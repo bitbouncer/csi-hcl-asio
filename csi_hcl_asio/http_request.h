@@ -36,6 +36,7 @@ class request
     _timeoutX(timeout),
     _http_result(csi::http::undefined),
     _tx_headers(headers),
+    _tx_stream(std::ios_base::ate | std::ios_base::in | std::ios_base::out),
     _curl_easy(NULL),
     _curl_headerlist(NULL),
     _curl_done(false) {
@@ -85,6 +86,7 @@ class request
 
   inline int64_t milliseconds() const { std::chrono::milliseconds duration = std::chrono::duration_cast<std::chrono::milliseconds>(_end_ts - _start_ts); return duration.count(); }
   inline int64_t microseconds() const { std::chrono::microseconds duration = std::chrono::duration_cast<std::chrono::microseconds>(_end_ts - _start_ts); return duration.count(); }
+  void append(const std::string& s) { _tx_stream << s; }
   std::string tx_content() const { return _tx_stream.str(); }
   const char* rx_content() const { return _rx_buffer.size() ? (const char*) _rx_buffer.data() : ""; }
   inline size_t tx_content_length() const { return _tx_stream.str().size(); }
