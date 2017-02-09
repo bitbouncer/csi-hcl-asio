@@ -68,10 +68,11 @@ class client
   };
 
   public:
-  client(boost::asio::io_service& io_service) :
-    _io_service(io_service),
-    _timer(_io_service),
-    _closing(false) {
+  client(boost::asio::io_service& io_service)
+    :_io_service(io_service)
+    , _timer(_io_service)
+    , _closing(false)
+    , _user_agent_header("User-Agent:csi-http/0.1") {
     _multi = curl_multi_init();
     curl_multi_setopt(_multi, CURLMOPT_SOCKETFUNCTION, _sock_cb);
     curl_multi_setopt(_multi, CURLMOPT_SOCKETDATA, this);
@@ -81,6 +82,10 @@ class client
 
   ~client() {
     close();
+  }
+
+  void set_user_agent(std::string s) {
+    _user_agent_header = std::string("User-Agent:") + s;
   }
 
   void close() {
@@ -190,7 +195,7 @@ class client
     static const char buf[] = "Expect:";
     /* initalize custom header list (stating that Expect: 100-continue is not wanted */
     request->_curl_headerlist = curl_slist_append(request->_curl_headerlist, buf);
-    request->_curl_headerlist = curl_slist_append(request->_curl_headerlist, "User-Agent:csi-http/0.1");
+    request->_curl_headerlist = curl_slist_append(request->_curl_headerlist, _user_agent_header.c_str());
     for (std::vector<std::string>::const_iterator i = request->_tx_headers.begin(); i != request->_tx_headers.end(); ++i)
       request->_curl_headerlist = curl_slist_append(request->_curl_headerlist, i->c_str());
     curl_easy_setopt(request->_curl_easy, CURLOPT_HTTPHEADER, request->_curl_headerlist);
@@ -522,6 +527,7 @@ class client
   std::map<curl_socket_t, boost::asio::ip::tcp::socket *> _socket_map;
   CURLM*                                                  _multi;
   int                                                     _curl_handles_still_running;
+  std::string                                             _user_agent_header;
   bool                                                    _closing;
 };
 }; // namespace
