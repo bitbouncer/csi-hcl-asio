@@ -133,6 +133,8 @@ class client
 
     curl_easy_setopt(request->_curl_easy, CURLOPT_CLOSESOCKETFUNCTION, &client::_closesocket_cb);
     curl_easy_setopt(request->_curl_easy, CURLOPT_CLOSESOCKETDATA, this);
+    
+    curl_easy_setopt(request->_curl_easy, CURLOPT_NOSIGNAL, 1L); // try to avoid signals to timeout address resolution calls
 
     //SSL OPTIONS
     //set up curls cerfificate check
@@ -290,7 +292,7 @@ class client
       //  BOOST_LOG_TRIVIAL(warning) << this << ", " << BOOST_CURRENT_FUNCTION << ", CURL_POLL_REMOVE, socket: " << s << " - no context, skipping";
       //  return 0;
       //}
-      //// do nothing and hope we get a socket close callback???? kolla om det är rätt...
+      //// do nothing and hope we get a socket close callback???? kolla om det Ã¤r rÃ¤tt...
       //// we cannot close or destroy the boost socket since this in inside callback - it is still used...
       return 0;
     }
@@ -369,7 +371,7 @@ class client
       // CURL_SOCKET_TIMEOUT, 0 is corrent on timeouts http://curl.haxx.se/libcurl/c/curl_multi_socket_action.html
       CURLMcode rc = curl_multi_socket_action(_multi, CURL_SOCKET_TIMEOUT, 0, &_curl_handles_still_running);
       check_completed();
-      //check_multi_info(); //TBD kolla om denna ska vara här
+      //check_multi_info(); //TBD kolla om denna ska vara hÃ¤r
     }
   }
 
@@ -397,7 +399,7 @@ class client
       boost::system::error_code error; /*success*/
       timer_cb(error);
     }
-    check_completed(); // ska den vara här ???
+    check_completed(); // ska den vara hÃ¤r ???
     return 0;
   }
 
