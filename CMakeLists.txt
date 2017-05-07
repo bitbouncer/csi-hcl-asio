@@ -12,20 +12,18 @@ ${CMAKE_SOURCE_DIR}
 if(WIN32)
 
 SET(CSI_INCLUDE_PATH ${CSI_INCLUDE_PATH}
-	${CMAKE_SOURCE_DIR}/../curl/include
-	${CMAKE_SOURCE_DIR}/../openssl/inc32
+  ${CMAKE_SOURCE_DIR}/../curl/include
+  ${CMAKE_SOURCE_DIR}/../openssl/inc32
   )
 SET(CSI_LIBRARY_PATH        
-	${CMAKE_SOURCE_DIR}/../lib/$(Platform)
+  ${CMAKE_SOURCE_DIR}/../lib/$(Platform)
   ${CMAKE_SOURCE_DIR}/../boost/stage/lib/$(Platform)/lib
-	${CMAKE_SOURCE_DIR}/../openssl/out32
+  ${CMAKE_SOURCE_DIR}/../openssl/out32
 )
 
 SET(EXECUTABLE_OUTPUT_PATH  ${CMAKE_SOURCE_DIR}/bin/$(Platform))
 else()
 
-#SET(CSI_LIBRARY_PATH        ${CMAKE_SOURCE_DIR}/boost/stage/lib
-#set(LIBRARY_OUTPUT_PATH     ${CMAKE_SOURCE_DIR}/lib)
 SET(EXECUTABLE_OUTPUT_PATH  ${CMAKE_SOURCE_DIR}/bin)
 
 endif() 
@@ -54,6 +52,9 @@ add_definitions(-DCURL_STATICLIB)
 add_definitions(-DCARES_STATICLIB)
 add_definitions(-DNGHTTP2_STATICLIB)
 endif()
+
+
+
 
 if(__LINUX__)
 add_definitions(-D__LINUX__)
