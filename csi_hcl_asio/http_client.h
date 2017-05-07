@@ -82,6 +82,10 @@ class client
 
   ~client() {
     close();
+    
+    // wait for the close to be done
+    while (_multi)
+      std::this_thread::sleep_for(std::chrono::milliseconds(100)); // patch for not waiting for http to die... FIXME
   }
 
   void set_user_agent(std::string s) {
